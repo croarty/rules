@@ -1,8 +1,9 @@
-using System.Diagnostics;
-using System.Linq.Expressions;
+using Autofac;
+using daap.rules.fulfilmentoutcomes;
 using NRules;
+using NRules.Fluent;
+using NRules.Integration.Autofac;
 using NRules.RuleModel;
-using NRules.RuleModel.Builders;
 
 namespace test.daap.rules;
 
@@ -31,72 +32,32 @@ public class Tests
 
         session.Fire();
     }
-}
 
-public class CustomRuleRepository : IRuleRepository
-{
-    private readonly IRuleSet _ruleSet = new RuleSet("MyRuleSet");
-
-    public IEnumerable<IRuleSet> GetRuleSets()
+    [Test]
+    public void Test2()
     {
-        return new[] {_ruleSet};
+        var builder = new ContainerBuilder();
+        builder.RegisterType<Notifier>().As<IDoSomething>();
+        // var types = builder.RegisterRules(x => x.AssemblyOf(typeof(MyTestRule)));
+        builder.RegisterRuleRepository(rrr =>
+        {
+            var type = typeof(MyTestRule);
+            rrr.AssemblyOf(type);
+        });
+        builder.RegisterSessionFactory();
+        builder.RegisterSession();
+        var container = builder.Build();
+
+        var ruleRepository = container.Resolve<IRuleRepository>();
+        var sessionFactory = ruleRepository.Compile();
+        
+        ISession session = sessionFactory.CreateSession();
+        session.DependencyResolver = new AutofacDependencyResolver(container);
+        
+        Context d = new Context();
+        session.Insert(d);
+
+        session.Fire();
     }
-
-    public void LoadRules()
-    {
-        //Assuming there is only one rule in this example
-        var rule = BuildRule();
-        _ruleSet.Add(new []{rule});
-    }
-
-    private IRuleDefinition BuildRule()
-    {
-        //Create rule builder
-        var builder = new RuleBuilder();
-        builder.Name("TestRule");
-
-        //Build conditions
-        PatternBuilder customerPattern = builder.LeftHandSide().Pattern(typeof (CustomerForRuleBuilder), "customer");
-        Expression<Func<CustomerForRuleBuilder, bool>> customerCondition = 
-            customer => customer.Name == "John Do";
-        customerPattern.Condition(customerCondition);
-
-        PatternBuilder orderPattern = builder.LeftHandSide().Pattern(typeof (OrderForRuleBuilder), "order");
-        Expression<Func<OrderForRuleBuilder, CustomerForRuleBuilder, bool>> orderCondition1 = 
-            (order, customer) => order.Customer == customer;
-        Expression<Func<OrderForRuleBuilder, bool>> orderCondition2 = 
-            order => order.Amount > 100.00m;
-        orderPattern.Condition(orderCondition1);
-        orderPattern.Condition(orderCondition2);
-
-        //Build actions
-        Expression<Action<IContext, CustomerForRuleBuilder, OrderForRuleBuilder>> action = 
-            (ctx, customer, order) => Trace.WriteLine($"Customer {customer.Name} has an order in amount of {order.Amount}");
-        builder.RightHandSide().Action(action);
-
-        //Build rule model
-        return builder.Build();
-    }
-}
-
-public class CustomerForRuleBuilder
-{
-    public CustomerForRuleBuilder(string name)
-    {
-        Name = name;
-    }
-
-    public string Name { get; private set; }
-}
-
-public class OrderForRuleBuilder
-{
-    public OrderForRuleBuilder(CustomerForRuleBuilder customer, decimal amount)
-    {
-        Customer = customer;
-        Amount = amount;
-    }
-
-    public CustomerForRuleBuilder Customer { get; private set; }
-    public decimal Amount { get; private set; }
+    
 }
